@@ -8,6 +8,7 @@ add_public_tablegen_target(LLDBDAPOptionsTableGen)
 add_lldb_library(lldbDAP
   Breakpoint.cpp
   BreakpointBase.cpp
+  CommandPlugins.cpp
   DAP.cpp
   DAPError.cpp
   DAPLog.cpp
@@ -23,6 +24,7 @@ add_lldb_library(lldbDAP
   RunInTerminal.cpp
   SourceBreakpoint.cpp
   Transport.cpp
+  Variables.cpp
   Watchpoint.cpp
 
   Handler/ResponseHandler.cpp
@@ -84,3 +86,5 @@ if(LLDB_DAP_WELCOME_MESSAGE)
     PRIVATE
     -DLLDB_DAP_WELCOME_MESSAGE=\"${LLDB_DAP_WELCOME_MESSAGE}\")
 endif()
+
+add_subdirectory(tool)
