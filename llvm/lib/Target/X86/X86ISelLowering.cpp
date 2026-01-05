@@ -59698,6 +59698,7 @@ static SDValue combineConcatVectorOps(const SDLoc &DL, MVT VT,
       }
       break;
     case ISD::SETCC:
+    case X86ISD::CMPM:
       if (!IsSplat && EltSizeInBits == 1 &&
           llvm::all_of(Ops, [Op0](SDValue Op) {
             return Op0.getOperand(0).getValueType() ==
@@ -59812,7 +59813,25 @@ static SDValue combineConcatVectorOps(const SDLoc &DL, MVT VT,
           bool SelfMul = llvm::all_of(Ops, [](SDValue Op) {
             return Op.getOperand(0) == Op.getOperand(1);
           });
-          if (Concat0 || Concat1 || Concat2 || NumFree >= 2 || SelfMul)
+          // Check for accumulative FMA patterns where we share a concat.
+          // e.g. FMA(FMA(X,Y,Z),Y,W)
+          // TODO: We should be doing this generally as part of the recursion.
+          bool Inner0 = !IsFree0 && !Concat0;
+          bool Inner1 = !IsFree1 && !Concat1;
+          for (SDValue Op : Ops) {
+            auto IsAnyFMA = [](unsigned Opc) {
+              return Opc == ISD::FMA || Opc == X86ISD::FMSUB ||
+                     Opc == X86ISD::FNMSUB || Opc == X86ISD::FNMADD;
+            };
+            Inner0 &= IsAnyFMA(Op.getOperand(1).getOpcode()) &&
+                      (Op.getOperand(1).getOperand(0) == Op.getOperand(0) ||
+                       Op.getOperand(1).getOperand(1) == Op.getOperand(0));
+            Inner1 &= IsAnyFMA(Op.getOperand(0).getOpcode()) &&
+                      (Op.getOperand(0).getOperand(0) == Op.getOperand(1) ||
+                       Op.getOperand(0).getOperand(1) == Op.getOperand(1));
+          }
+          if (Concat0 || Inner0 || Concat1 || Inner1 || Concat2 ||
+              NumFree >= 2 || SelfMul)
             return DAG.getNode(Opcode, DL, VT,
                                Concat0 ? Concat0 : ConcatSubOperand(VT, Ops, 0),
                                Concat1 ? Concat1 : ConcatSubOperand(VT, Ops, 1),
@@ -60143,6 +60162,8 @@ static SDValue combineCONCAT_VECTORS(SDNode *N, SelectionDAG &DAG,
     // Attempt to merge comparison/logic ops if the type is legal.
     if (TLI.isTypeLegal(VT) &&
         (all_of(Ops, [](SDValue Op) { return Op.getOpcode() == ISD::SETCC; }) ||
+         all_of(Ops,
+                [](SDValue Op) { return Op.getOpcode() == X86ISD::CMPM; }) ||
          all_of(Ops, [](SDValue Op) {
            return ISD::isBitwiseLogicOp(Op.getOpcode());
          }))) {
